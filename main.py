@@ -31,54 +31,19 @@ def clean_old_files(folder='downloads', max_age_minutes=60):
             if file_age > max_age_seconds:
                 os.remove(file_path)
 
-@app.post("/formats")
-async def get_formats(request: Request):
-    try:
-        data = await request.json()
-        url = data.get("url")
-
-        if "?" in url:
-            url = url.split("?")[0]
-
-        ydl_opts = {
-            'quiet': True,
-            'skip_download': True,
-        }
-
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(url, download=False)
-
-        formats = []
-        for f in info.get('formats', []):
-            if (f.get('height') and f.get('vcodec') != 'none') or (f.get('acodec') != 'none' and f.get('vcodec') == 'none'):
-                size = f.get('filesize') or f.get('filesize_approx')
-                formats.append({
-                    'format_id': f['format_id'],
-                    'ext': f['ext'],
-                    'height': f.get('height'),
-                    'note': f.get('format_note') or f.get('format'),
-                    'filesize': size
-                })
-
-        return {"formats": formats}
-
-    except Exception as e:
-        return JSONResponse(content={"error": str(e)})
-
 @app.post("/download")
 async def download_video(request: Request):
     try:
         data = await request.json()
         url = data.get("url")
-        format_id = data.get("format_id")
 
         if "?" in url:
             url = url.split("?")[0]
 
-        # Clean old files before downloading
+        # Clean old files
         clean_old_files()
 
-        # Save before downloading
+        # Save files before downloading
         existing_files = set(os.listdir('downloads'))
 
         ydl_opts = {
@@ -86,13 +51,13 @@ async def download_video(request: Request):
             'quiet': True,
             'noplaylist': True,
             'merge_output_format': 'mp4',
-            'format': f"{format_id}+bestaudio/best" if format_id.isdigit() else format_id,
+            'format': 'bestvideo+bestaudio/best',
         }
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             ydl.download([url])
 
-        # After download, find new file
+        # Find new downloaded file
         new_files = set(os.listdir('downloads')) - existing_files
         if not new_files:
             return JSONResponse(content={"error": "No file downloaded."})
