@@ -6,7 +6,7 @@ import os
 
 app = FastAPI()
 
-# Allow Blogger frontend (CORS)
+# Allow Blogger or any frontend
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -15,59 +15,74 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-@app.post("/download")
-async def download_video(request: Request):
-    data = await request.json()
-    video_url = data.get("url")
-    selected_format = data.get("format", "best")  # Default to best
+# Create downloads folder if missing
+if not os.path.exists('downloads'):
+    os.makedirs('downloads')
 
+@app.post("/formats")
+async def get_formats(request: Request):
+    """
+    Get available formats for a given video URL
+    """
     try:
-        if not os.path.exists('downloads'):
-            os.makedirs('downloads')
+        data = await request.json()
+        url = data.get("url")
 
-        # Clean the URL if extra parameters exist
-        if "?" in video_url:
-            video_url = video_url.split("?")[0]
+        if "?" in url:
+            url = url.split("?")[0]
 
-        # Base yt-dlp options
         ydl_opts = {
-            'outtmpl': 'downloads/%(title)s.%(ext)s',  # Save path
-            'noplaylist': True,                        # Only download single video
-            'quiet': True,                             # Reduce log noise
-            'force_generic_extractor': False,          # Default
+            'quiet': True,
+            'skip_download': True,
+            'force_generic_extractor': False,
         }
 
-        # Adjust based on user format selection
-        if selected_format == "mp3":
-            ydl_opts.update({
-                'format': 'bestaudio/best',
-                'postprocessors': [{
-                    'key': 'FFmpegExtractAudio',
-                    'preferredcodec': 'mp3',
-                    'preferredquality': '192',
-                }]
-            })
-        elif selected_format in ["144", "360", "480", "720", "1080"]:
-            ydl_opts.update({
-                'format': f'bestvideo[height<={selected_format}]+bestaudio/best/best',
-            })
-        else:
-            ydl_opts.update({
-                'format': 'best',
-            })
-
-        # Start download
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(video_url, download=True)
+            info = ydl.extract_info(url, download=False)
+        
+        formats = []
+        for f in info.get('formats', []):
+            # Only return formats with height (video) or audio
+            if f.get('height') or (f.get('acodec') != 'none' and f.get('vcodec') == 'none'):
+                formats.append({
+                    'format_id': f['format_id'],
+                    'ext': f['ext'],
+                    'height': f.get('height'),
+                    'note': f.get('format_note') or f.get('format')
+                })
+
+        return {"formats": formats}
+
+    except Exception as e:
+        return JSONResponse(content={"error": str(e)})
+
+@app.post("/download")
+async def download_video(request: Request):
+    """
+    Download the video/audio in the selected format
+    """
+    try:
+        data = await request.json()
+        url = data.get("url")
+        format_id = data.get("format_id")
+
+        if "?" in url:
+            url = url.split("?")[0]
+
+        # Define output template
+        ydl_opts = {
+            'outtmpl': 'downloads/%(title)s.%(ext)s',
+            'quiet': True,
+            'noplaylist': True,
+            'format': format_id
+        }
+
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(url, download=True)
             filename = ydl.prepare_filename(info)
 
-        # File path handling
-        if selected_format == "mp3":
-            file_path = filename.rsplit('.', 1)[0] + ".mp3"
-        else:
-            file_path = filename
+        file_path = filename
 
-        # Serve the file
         if os.path.exists(file_path):
             return FileResponse(file_path, media_type='application/octet-stream', filename=os.path.basename(file_path))
         else:
