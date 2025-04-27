@@ -7,7 +7,6 @@ import time
 
 app = FastAPI()
 
-# Allow Blogger or any frontend
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -34,7 +33,6 @@ async def get_formats(request: Request):
     try:
         data = await request.json()
         url = data.get("url")
-
         if not url:
             return JSONResponse(content={"error": "URL missing"})
 
@@ -43,6 +41,8 @@ async def get_formats(request: Request):
 
         ydl_opts = {
             'quiet': True,
+            'noplaylist': True,
+            'extractor_args': {'youtube': {'player_client': ['web']}},
             'skip_download': True,
         }
 
@@ -71,10 +71,9 @@ async def download_video(request: Request):
     try:
         data = await request.json()
         url = data.get("url")
-        format_id = data.get("format_id")
 
-        if not url or not format_id:
-            return JSONResponse(content={"error": "URL or Format ID missing"})
+        if not url:
+            return JSONResponse(content={"error": "URL missing"})
 
         if "?" in url:
             url = url.split("?")[0]
@@ -83,13 +82,17 @@ async def download_video(request: Request):
 
         existing_files = set(os.listdir('downloads'))
 
-        # Merging bestvideo+bestaudio
+        # Download best video+audio merged
         ydl_opts = {
             'outtmpl': 'downloads/%(title)s.%(ext)s',
             'quiet': True,
             'noplaylist': True,
+            'format': 'bestvideo+bestaudio/best',
             'merge_output_format': 'mp4',
-            'format': f"{format_id}+bestaudio/best" if format_id.isdigit() else format_id,
+            'postprocessors': [{
+                'key': 'FFmpegVideoConvertor',
+                'preferedformat': 'mp4'
+            }]
         }
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
