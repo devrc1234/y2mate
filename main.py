@@ -6,10 +6,10 @@ import os
 
 app = FastAPI()
 
-# CORS to allow Blogger frontend
+# Allow CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Allow any domain
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -27,13 +27,14 @@ async def download_video(request: Request):
         ydl_opts = {
             'format': 'best',
             'outtmpl': 'downloads/%(title)s.%(ext)s',
+            'force_generic_extractor': True,  # 👈 Important for Instagram Reels
+            'noplaylist': True,
         }
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(video_url, download=True)
             filename = ydl.prepare_filename(info)
 
-        # Return the file directly
         file_path = filename
         if os.path.exists(file_path):
             return FileResponse(file_path, media_type='video/mp4', filename=os.path.basename(file_path))
