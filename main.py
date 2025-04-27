@@ -3,11 +3,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 import yt_dlp
 import os
-import time
 
 app = FastAPI()
 
-# Allow Blogger or any frontend
+# Allow Blogger frontend (CORS)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -16,53 +15,63 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-if not os.path.exists('downloads'):
-    os.makedirs('downloads')
-
-def clean_old_files(folder='downloads', max_age_minutes=60):
-    now = time.time()
-    max_age_seconds = max_age_minutes * 60
-    for filename in os.listdir(folder):
-        file_path = os.path.join(folder, filename)
-        if os.path.isfile(file_path):
-            file_age = now - os.path.getmtime(file_path)
-            if file_age > max_age_seconds:
-                os.remove(file_path)
-
 @app.post("/download")
 async def download_video(request: Request):
+    data = await request.json()
+    video_url = data.get("url")
+    selected_format = data.get("format", "best")  # Default to best
+
     try:
-        data = await request.json()
-        url = data.get("url")
+        if not os.path.exists('downloads'):
+            os.makedirs('downloads')
 
-        if "?" in url:
-            url = url.split("?")[0]
+        # Clean the URL if extra parameters exist
+        if "?" in video_url:
+            video_url = video_url.split("?")[0]
 
-        clean_old_files()
-
-        existing_files = set(os.listdir('downloads'))
-
+        # Base yt-dlp options
         ydl_opts = {
-            'outtmpl': 'downloads/%(title)s.%(ext)s',
-            'quiet': True,
-            'noplaylist': True,
-            'format': 'best',
-            'merge_output_format': 'mp4'
+            'outtmpl': 'downloads/%(title)s.%(ext)s',  # Save path
+            'noplaylist': True,                        # Only download single video
+            'quiet': True,                             # Reduce log noise
+            'force_generic_extractor': False,          # Default
         }
 
+        # Adjust based on user format selection
+        if selected_format == "mp3":
+            ydl_opts.update({
+                'format': 'bestaudio/best',
+                'postprocessors': [{
+                    'key': 'FFmpegExtractAudio',
+                    'preferredcodec': 'mp3',
+                    'preferredquality': '192',
+                }]
+            })
+        elif selected_format in ["144", "360", "480", "720", "1080"]:
+            ydl_opts.update({
+                'format': f'bestvideo[height<={selected_format}]+bestaudio/best/best',
+            })
+        else:
+            ydl_opts.update({
+                'format': 'best',
+            })
+
+        # Start download
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            ydl.download([url])
+            info = ydl.extract_info(video_url, download=True)
+            filename = ydl.prepare_filename(info)
 
-        new_files = set(os.listdir('downloads')) - existing_files
-        if not new_files:
-            return JSONResponse(content={"error": "No file downloaded."})
+        # File path handling
+        if selected_format == "mp3":
+            file_path = filename.rsplit('.', 1)[0] + ".mp3"
+        else:
+            file_path = filename
 
-        file_path = max(
-            [os.path.join('downloads', f) for f in new_files],
-            key=os.path.getmtime
-        )
-
-        return FileResponse(file_path, media_type='application/octet-stream', filename=os.path.basename(file_path))
+        # Serve the file
+        if os.path.exists(file_path):
+            return FileResponse(file_path, media_type='application/octet-stream', filename=os.path.basename(file_path))
+        else:
+            return JSONResponse(content={"error": "File not found"})
 
     except Exception as e:
         return JSONResponse(content={"error": str(e)})
