@@ -43,7 +43,7 @@ async def get_formats(request: Request):
         formats = []
         for f in info.get('formats', []):
             # Only return formats with height (video) or audio
-            if f.get('height') or (f.get('acodec') != 'none' and f.get('vcodec') == 'none'):
+            if (f.get('height') and f.get('vcodec') != 'none') or (f.get('acodec') != 'none' and f.get('vcodec') == 'none'):
                 formats.append({
                     'format_id': f['format_id'],
                     'ext': f['ext'],
@@ -59,7 +59,7 @@ async def get_formats(request: Request):
 @app.post("/download")
 async def download_video(request: Request):
     """
-    Download the video/audio in the selected format
+    Download the video/audio in the selected format (with proper audio merging)
     """
     try:
         data = await request.json()
@@ -69,12 +69,18 @@ async def download_video(request: Request):
         if "?" in url:
             url = url.split("?")[0]
 
-        # Define output template
+        # If selected format is video only, add '+bestaudio'
+        if format_id.isdigit():
+            download_format = f"{format_id}+bestaudio/best"
+        else:
+            download_format = format_id
+
         ydl_opts = {
             'outtmpl': 'downloads/%(title)s.%(ext)s',
             'quiet': True,
             'noplaylist': True,
-            'format': format_id
+            'merge_output_format': 'mp4',
+            'format': download_format
         }
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -82,6 +88,14 @@ async def download_video(request: Request):
             filename = ydl.prepare_filename(info)
 
         file_path = filename
+
+        # Some merging operations change extension, fix that
+        if not os.path.exists(file_path):
+            base = os.path.splitext(filename)[0]
+            if os.path.exists(base + ".mp4"):
+                file_path = base + ".mp4"
+            elif os.path.exists(base + ".mkv"):
+                file_path = base + ".mkv"
 
         if os.path.exists(file_path):
             return FileResponse(file_path, media_type='application/octet-stream', filename=os.path.basename(file_path))
