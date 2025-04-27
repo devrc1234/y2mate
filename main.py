@@ -6,6 +6,7 @@ import os
 
 app = FastAPI()
 
+# Allow CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -24,10 +25,10 @@ async def download_video(request: Request):
             os.makedirs('downloads')
 
         ydl_opts = {
-            'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
+            'format': 'best',
             'outtmpl': 'downloads/%(title)s.%(ext)s',
+            'force_generic_extractor': True,  # 👈 Important for Instagram Reels
             'noplaylist': True,
-            'merge_output_format': 'mp4',  # Force final file to mp4
         }
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -41,4 +42,4 @@ async def download_video(request: Request):
             return JSONResponse(content={"error": "File not found"})
 
     except Exception as e:
-        return JSONResponse(content={"error": str(e)})
+        return JSONResponse(content={"error": str(e)}) 
