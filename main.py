@@ -7,7 +7,7 @@ import time
 
 app = FastAPI()
 
-# Allow CORS (Frontend can call Backend)
+# Allow Blogger or any frontend
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -16,7 +16,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Create 'downloads' folder if missing
 if not os.path.exists('downloads'):
     os.makedirs('downloads')
 
@@ -32,12 +31,10 @@ def clean_old_files(folder='downloads', max_age_minutes=60):
 
 @app.post("/formats")
 async def get_formats(request: Request):
-    """
-    Get available video and audio formats from a URL
-    """
     try:
         data = await request.json()
         url = data.get("url")
+
         if not url:
             return JSONResponse(content={"error": "URL missing"})
 
@@ -71,9 +68,6 @@ async def get_formats(request: Request):
 
 @app.post("/download")
 async def download_video(request: Request):
-    """
-    Download selected video/audio format
-    """
     try:
         data = await request.json()
         url = data.get("url")
@@ -85,11 +79,11 @@ async def download_video(request: Request):
         if "?" in url:
             url = url.split("?")[0]
 
-        # Clean old files
         clean_old_files()
 
         existing_files = set(os.listdir('downloads'))
 
+        # Merging bestvideo+bestaudio
         ydl_opts = {
             'outtmpl': 'downloads/%(title)s.%(ext)s',
             'quiet': True,
