@@ -1,16 +1,25 @@
-
 from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 import yt_dlp
 import os
 
 app = FastAPI()
 
+# 👇 Add this CORS setting
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # 👈 Allow all frontend sites (Blogger)
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 @app.post("/download")
 async def download_video(request: Request):
     data = await request.json()
     video_url = data.get("url")
-
+    
     try:
         if not os.path.exists('downloads'):
             os.makedirs('downloads')
@@ -24,7 +33,7 @@ async def download_video(request: Request):
             info = ydl.extract_info(video_url, download=True)
             filename = ydl.prepare_filename(info)
 
-        return JSONResponse(content={"filename": os.path.basename(filename)})
+        return JSONResponse(content={"filename": filename})
 
     except Exception as e:
         return JSONResponse(content={"error": str(e)})
